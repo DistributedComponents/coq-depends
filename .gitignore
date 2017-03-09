@@ -1,0 +1,16 @@
+*~
+*.coq.bak
+*.cmi
+*.ml.d
+*.cmo
+*.cmx
+*.cmxs
+*.ml
+*.o
+*.ml4.d
+*.cmi
+*.aux
+*.glob
+*.v.d
+*.vo
+Makefile.coq
