@@ -161,12 +161,15 @@ let get_dirlist_grefs dirlist =
     Search.generic_search None select;
     !selected_gref
 
-let display_module_deps dirlist = 
+let display_module_list_deps dirlist =
   let grefs = get_dirlist_grefs dirlist in
   List.iter (fun gref -> display_deps gref) grefs
 
 VERNAC COMMAND EXTEND Depends
-| ["Depends" global(ref) ] -> [ display_deps (Nametab.global ref) ]
-| ["TypeDepends" global(ref) ] -> [ display_type_deps (Nametab.global ref) ]
-| ["ModuleDepends" reference_list(dl) ] -> [ display_module_deps (List.map locate_mp_dirpath dl) ]
+| [ "Depends" reference_list(rl) ] ->
+  [ List.iter (fun ref -> display_deps (Nametab.global ref)) rl ]
+| [ "TypeDepends" reference_list(rl) ] ->
+  [ List.iter (fun ref -> display_type_deps (Nametab.global ref)) rl ]
+| [ "ModuleDepends" reference_list(rl) ] ->
+  [ display_module_list_deps (List.map locate_mp_dirpath rl) ]
 END
