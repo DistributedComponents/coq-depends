@@ -69,7 +69,19 @@ let collect_long_names (c:Term.constr) (acc:Data.t) =
 
 exception NoDef of Globnames.global_reference
 
-let collect_dependance gref = 
+let collect_type_dependence gref =
+  match gref with
+  | Globnames.VarRef _ -> assert false
+  | Globnames.ConstRef cst ->
+      let cb = Environ.lookup_constant cst (Global.env()) in
+      let cl = match cb.Declarations.const_type with
+        | Declarations.RegularArity t -> [t]
+        | Declarations.TemplateArity _ -> [] in
+      List.fold_right collect_long_names cl Data.empty
+  | Globnames.IndRef _ | Globnames.ConstructRef (_,_) ->
+    Data.empty
+
+let collect_dependence gref =
   match gref with
   | Globnames.VarRef _ -> assert false
   | Globnames.ConstRef cst ->
@@ -86,17 +98,27 @@ let collect_dependance gref =
       let ca = indbody.Declarations.mind_user_lc in
         Array.fold_right collect_long_names ca Data.empty
 
-let display_dependance gref = 
+let display_type_dependence gref =
   let display d =
-    let pp gr n s = 
-      Printer.pr_global gr ++ str "(" ++ int n ++ str ")" ++ spc() ++s
+    let pp gr n s =
+      Printer.pr_global gr ++ spc() ++ s
     in
       Pp.msgnl (str"[" ++ ((Data.fold pp) d (str "]")))
-  in try let data = collect_dependance gref in display data
+  in try let data = collect_type_dependence gref in display data
+  with NoDef gref ->
+    Pp.msgerrnl (Printer.pr_global gref ++ str " has no value")
+
+let display_dependence gref =
+  let display d =
+    let pp gr n s = 
+      Printer.pr_global gr ++ spc() ++ s
+    in
+      Pp.msgnl (str"[" ++ ((Data.fold pp) d (str "]")))
+  in try let data = collect_dependence gref in display data
   with NoDef gref -> 
     Pp.msgerrnl (Printer.pr_global gref ++ str " has no value")
 
 VERNAC COMMAND EXTEND Depends
-   ["Depends" global(ref) ] -> [ display_dependance (Nametab.global ref) ]
+| ["Depends" global(ref) ] -> [ display_dependence (Nametab.global ref) ]
+| ["TypeDepends" global(ref) ] -> [ display_type_dependence (Nametab.global ref) ]
 END
-
