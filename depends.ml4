@@ -1,5 +1,5 @@
 (*~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~*)
-(*            This file is part of the DpdGraph tools.                        *)
+(*            Derived from DpdGraph tools.                                    *)
 (*   Copyright (C) 2009-2015 Anne Pacalet (Anne.Pacalet@free.fr)              *)
 (*                       and Yves Bertot (Yves.Bertot@inria.fr)               *)
 (*             ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~                                *)
@@ -11,6 +11,14 @@
 DECLARE PLUGIN "depends"
 
 open Pp
+
+let debug msg = if false then Pp.msgnl msg
+
+let feedback msg = Pp.msgnl (str "Info: " ++ msg)
+
+let warning msg = Pp.msgerrnl (str "Warning: " ++ msg)
+
+let error msg = Pp.msgerrnl (str "Error: " ++ msg)
 
 module Data = struct
   type t = int Globnames.Refmap.t
@@ -69,7 +77,7 @@ let collect_long_names (c:Term.constr) (acc:Data.t) =
 
 exception NoDef of Globnames.global_reference
 
-let collect_type_dependence gref =
+let collect_type_deps gref =
   match gref with
   | Globnames.VarRef _ -> assert false
   | Globnames.ConstRef cst ->
@@ -81,7 +89,7 @@ let collect_type_dependence gref =
   | Globnames.IndRef _ | Globnames.ConstructRef (_,_) ->
     Data.empty
 
-let collect_dependence gref =
+let collect_deps gref =
   match gref with
   | Globnames.VarRef _ -> assert false
   | Globnames.ConstRef cst ->
@@ -98,27 +106,69 @@ let collect_dependence gref =
       let ca = indbody.Declarations.mind_user_lc in
         Array.fold_right collect_long_names ca Data.empty
 
-let display_type_dependence gref =
+let display_type_deps gref =
   let display d =
     let pp gr n s =
       Printer.pr_global gr ++ spc() ++ s
     in
-      Pp.msgnl (str"[" ++ ((Data.fold pp) d (str "]")))
-  in try let data = collect_type_dependence gref in display data
+      Pp.msgnl (Printer.pr_global gref ++ str " [ " ++ ((Data.fold pp) d (str " ]")))
+  in try let data = collect_type_deps gref in display data
   with NoDef gref ->
     Pp.msgerrnl (Printer.pr_global gref ++ str " has no value")
 
-let display_dependence gref =
+let display_deps gref =
   let display d =
     let pp gr n s = 
       Printer.pr_global gr ++ spc() ++ s
     in
-      Pp.msgnl (str"[" ++ ((Data.fold pp) d (str "]")))
-  in try let data = collect_dependence gref in display data
+      Pp.msgnl (Printer.pr_global gref ++ str " [ " ++ ((Data.fold pp) d (str " ]")))
+  in try let data = collect_deps gref in display data
   with NoDef gref -> 
     Pp.msgerrnl (Printer.pr_global gref ++ str " has no value")
 
+let is_prop gref id =
+  try
+    let glob = Glob_term.GRef(Loc.ghost, gref, None) in
+    let env = Global.env() in
+    let sigma = Evd.from_env env in
+    let sigma', c = Pretyping.understand_tcc env sigma glob in
+    let sigma2 = Evarconv.consider_remaining_unif_problems env sigma' in
+    let sigma3, nf = Evarutil.nf_evars_and_universes sigma2 in
+    let pl, uctx = Evd.universe_context sigma3 in
+    let env2 = Environ.push_context uctx (Evarutil.nf_env_evar sigma3 env) in
+    let c2 = nf c in
+    let t = Environ.j_type (Typeops.infer env2 c2) in
+    let t2 = Environ.j_type (Typeops.infer env2 t) in
+    Term.is_Prop t2
+  with _ -> 
+    begin
+      warning (str "unable to determine the type of the type for " ++ str id);
+      false
+    end
+
+let locate_mp_dirpath ref =
+  let (loc,qid) = Libnames.qualid_of_reference ref in
+  try Nametab.dirpath_of_module (Nametab.locate_module qid)
+  with Not_found -> 
+    Errors.user_err_loc 
+      (loc,"",str "Unknown module" ++ spc() ++ Libnames.pr_qualid qid)
+
+let get_dirlist_grefs dirlist =
+  let selected_gref = ref [] in
+  let select gref env constr = 
+    if Search.module_filter (dirlist, false) gref env constr then 
+    (debug (str "Select " ++ Printer.pr_global gref);
+     selected_gref := gref :: !selected_gref)
+  in 
+    Search.generic_search None select;
+    !selected_gref
+
+let display_module_deps dirlist = 
+  let grefs = get_dirlist_grefs dirlist in
+  List.iter (fun gref -> display_deps gref) grefs
+
 VERNAC COMMAND EXTEND Depends
-| ["Depends" global(ref) ] -> [ display_dependence (Nametab.global ref) ]
-| ["TypeDepends" global(ref) ] -> [ display_type_dependence (Nametab.global ref) ]
+| ["Depends" global(ref) ] -> [ display_deps (Nametab.global ref) ]
+| ["TypeDepends" global(ref) ] -> [ display_type_deps (Nametab.global ref) ]
+| ["ModuleDepends" reference_list(dl) ] -> [ display_module_deps (List.map locate_mp_dirpath dl) ]
 END
