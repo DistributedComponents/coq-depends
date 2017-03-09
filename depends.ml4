@@ -106,27 +106,7 @@ let collect_deps gref =
       let ca = indbody.Declarations.mind_user_lc in
         Array.fold_right collect_long_names ca Data.empty
 
-let display_type_deps gref =
-  let display d =
-    let pp gr n s =
-      Printer.pr_global gr ++ spc() ++ s
-    in
-      Pp.msgnl (Printer.pr_global gref ++ str " [ " ++ ((Data.fold pp) d (str " ]")))
-  in try let data = collect_type_deps gref in display data
-  with NoDef gref ->
-    Pp.msgerrnl (Printer.pr_global gref ++ str " has no value")
-
-let display_deps gref =
-  let display d =
-    let pp gr n s = 
-      Printer.pr_global gr ++ spc() ++ s
-    in
-      Pp.msgnl (Printer.pr_global gref ++ str " [ " ++ ((Data.fold pp) d (str " ]")))
-  in try let data = collect_deps gref in display data
-  with NoDef gref -> 
-    Pp.msgerrnl (Printer.pr_global gref ++ str " has no value")
-
-let is_prop gref id =
+let is_prop gref =
   try
     let glob = Glob_term.GRef(Loc.ghost, gref, None) in
     let env = Global.env() in
@@ -142,9 +122,27 @@ let is_prop gref id =
     Term.is_Prop t2
   with _ -> 
     begin
-      warning (str "unable to determine the type of the type for " ++ str id);
+      warning (str "unable to determine the type of the type for ref");
       false
     end
+
+let display_type_deps gref =
+  let display d =
+    let pp gr n s = Printer.pr_global gr ++ spc () ++ s in
+    let ip = if is_prop gref then str "true" else str "false" in
+    Pp.msgnl (Printer.pr_global gref ++ str " " ++ ip ++ str " [ " ++ ((Data.fold pp) d (str " ]")))
+  in try let data = collect_type_deps gref in display data
+  with NoDef gref ->
+    Pp.msgerrnl (Printer.pr_global gref ++ str " has no value")
+
+let display_deps gref =
+  let display d =
+    let pp gr n s = Printer.pr_global gr ++ spc () ++ s in
+    let ip = if is_prop gref then str "true" else str "false" in
+    Pp.msgnl (Printer.pr_global gref ++ str " " ++ ip ++ str " [ " ++ ((Data.fold pp) d (str " ]")))
+  in try let data = collect_deps gref in display data
+  with NoDef gref ->
+    Pp.msgerrnl (Printer.pr_global gref ++ str " has no value")
 
 let locate_mp_dirpath ref =
   let (loc,qid) = Libnames.qualid_of_reference ref in
