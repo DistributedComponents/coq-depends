@@ -12,13 +12,13 @@ DECLARE PLUGIN "depends"
 
 open Pp
 
-let debug msg = if false then Pp.msgnl msg
+let debug msg = if false then Pp.msg_notice msg
 
-let feedback msg = Pp.msgnl (str "Info: " ++ msg)
+let feedback msg = Pp.msg_notice (str "Info: " ++ msg)
 
-let warning msg = Pp.msgerrnl (str "Warning: " ++ msg)
+let warning msg = Pp.msg_error (str "Warning: " ++ msg)
 
-let error msg = Pp.msgerrnl (str "Error: " ++ msg)
+let error msg = Pp.msg_error (str "Error: " ++ msg)
 
 module Data = struct
   type t = int Globnames.Refmap.t
@@ -29,13 +29,13 @@ module Data = struct
     let n = try  Globnames.Refmap.find gref d with Not_found -> 0 in
     Globnames.Refmap.add gref (n+1) d
 
-      (* [f gref n acc] *)
+  (* [f gref n acc] *)
   let fold f d acc = Globnames.Refmap.fold f d acc
 end
 
 let add_identifier (x:Names.identifier)(d:Data.t) = 
   failwith 
-    ("SearchDep does not expect to find plain identifiers :" ^
+    ("Depends does not expect to find plain identifiers :" ^
      Names.string_of_id x)
 
 let add_sort (s:Term.sorts)(d:Data.t) = d
@@ -98,7 +98,7 @@ let collect_deps gref =
          Some e -> [e]
 	| None -> [] in
       let cl = match cb.Declarations.const_type with
-        | Declarations.RegularArity t -> t::cl
+        | Declarations.RegularArity t -> t :: cl
         | Declarations.TemplateArity _ ->  cl in
       List.fold_right collect_long_names cl Data.empty
   | Globnames.IndRef i | Globnames.ConstructRef (i,_) -> 
@@ -130,26 +130,25 @@ let display_type_deps gref =
   let display d =
     let pp gr n s = Printer.pr_global gr ++ spc () ++ s in
     let ip = if is_prop gref then str "true" else str "false" in
-    Pp.msgnl (Printer.pr_global gref ++ str " " ++ ip ++ str " [ " ++ ((Data.fold pp) d (str " ]")))
+    Pp.msg_notice (Printer.pr_global gref ++ str " " ++ ip ++ str " [ " ++ ((Data.fold pp) d (str " ]")))
   in try let data = collect_type_deps gref in display data
   with NoDef gref ->
-    Pp.msgerrnl (Printer.pr_global gref ++ str " has no value")
+    Pp.msg_error (Printer.pr_global gref ++ str " has no value")
 
 let display_deps gref =
   let display d =
     let pp gr n s = Printer.pr_global gr ++ spc () ++ s in
     let ip = if is_prop gref then str "true" else str "false" in
-    Pp.msgnl (Printer.pr_global gref ++ str " " ++ ip ++ str " [ " ++ ((Data.fold pp) d (str " ]")))
+    Pp.msg_notice (Printer.pr_global gref ++ str " " ++ ip ++ str " [ " ++ ((Data.fold pp) d (str " ]")))
   in try let data = collect_deps gref in display data
   with NoDef gref ->
-    Pp.msgerrnl (Printer.pr_global gref ++ str " has no value")
+    Pp.msg_error (Printer.pr_global gref ++ str " has no value")
 
 let locate_mp_dirpath ref =
   let (loc,qid) = Libnames.qualid_of_reference ref in
   try Nametab.dirpath_of_module (Nametab.locate_module qid)
   with Not_found -> 
-    Errors.user_err_loc 
-      (loc,"",str "Unknown module" ++ spc() ++ Libnames.pr_qualid qid)
+    Errors.user_err_loc (loc, "", str "Unknown module" ++ spc () ++ Libnames.pr_qualid qid)
 
 let get_dirlist_grefs dirlist =
   let selected_gref = ref [] in
@@ -165,7 +164,7 @@ let display_module_list_deps dirlist =
   let grefs = get_dirlist_grefs dirlist in
   List.iter (fun gref -> display_deps gref) grefs
 
-VERNAC COMMAND EXTEND Depends
+VERNAC COMMAND EXTEND Depends CLASSIFIED AS QUERY
 | [ "Depends" reference_list(rl) ] ->
   [ List.iter (fun ref -> display_deps (Nametab.global ref)) rl ]
 | [ "TypeDepends" reference_list(rl) ] ->
