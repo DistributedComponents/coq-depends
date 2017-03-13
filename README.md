@@ -29,12 +29,27 @@ Require StructTact.RemoveAll.
 (* load plugin *)
 Require Import Depends.Depends.
 
-(* show dependencies for single constant *)
-Depends Fin.fin_eq_dec.
+(* show dependencies for constants *)
+Depends Fin.fin_eq_dec Fin.all_fin.
 
-(* show dependencies for the type of a constant *)
-TypeDepends Fin.all_fin_all.
+(* write dependencies to file for constants *)
+Depends "fin-deps.dep" Fin.fin_eq_dec Fin.all_fin.
+
+(* show dependencies for the types of constants *)
+TypeDepends Fin.fin_eq_dec Fin.all_fin_all.
+
+(* write dependencies to file for the type of constants *)
+TypeDepends "fin-type-deps.txt" Fin.fin_eq_dec Fin.all_fin_all.
 
 (* show dependencies of all constants in given modules *)
 ModuleDepends Fin RemoveAll.
+
+(* write dependencies to file for all constants in given modules *)
+ModuleDepends "fin-removeall-deps.txt" Fin RemoveAll.
+
+(* show type dependencies of all constants in given modules *)
+ModuleTypeDepends Fin RemoveAll.
+
+(* write dependencies to file for all types of constants in given modules *)
+ModuleTypeDepends "fin-removeall-type-deps.txt" Fin RemoveAll.
 ```
