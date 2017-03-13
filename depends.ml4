@@ -126,23 +126,21 @@ let is_prop gref =
       false
     end
 
-let display_type_deps gref =
-  let display d =
-    let pp gr n s = Printer.pr_global gr ++ spc () ++ s in
-    let ip = if is_prop gref then str "true" else str "false" in
-    Pp.msg_notice (Printer.pr_global gref ++ str " " ++ ip ++ str " [ " ++ ((Data.fold pp) d (str " ]")))
-  in try let data = collect_type_deps gref in display data
-  with NoDef gref ->
-    Pp.msg_error (Printer.pr_global gref ++ str " has no value")
+let display fmt gref d =
+  let pp gr n s = Printer.pr_global gr ++ str " " ++ s in
+  let ip = if is_prop gref then str "true" else str "false" in
+  let dt = (Data.fold pp) d (str "]\n") in
+  pp_with fmt (Printer.pr_global gref ++ str " " ++ ip ++ str " [ " ++ dt)
 
-let display_deps gref =
-  let display d =
-    let pp gr n s = Printer.pr_global gr ++ spc () ++ s in
-    let ip = if is_prop gref then str "true" else str "false" in
-    Pp.msg_notice (Printer.pr_global gref ++ str " " ++ ip ++ str " [ " ++ ((Data.fold pp) d (str " ]")))
-  in try let data = collect_deps gref in display data
+let display_type_deps fmt gref =
+  try let data = collect_type_deps gref in display fmt gref data
   with NoDef gref ->
-    Pp.msg_error (Printer.pr_global gref ++ str " has no value")
+    warning (Printer.pr_global gref ++ str " has no value")
+
+let display_deps fmt gref =
+  try let data = collect_deps gref in display fmt gref data
+  with NoDef gref ->
+    warning (Printer.pr_global gref ++ str " has no value")
 
 let locate_mp_dirpath ref =
   let (loc,qid) = Libnames.qualid_of_reference ref in
@@ -152,7 +150,7 @@ let locate_mp_dirpath ref =
 
 let get_dirlist_grefs dirlist =
   let selected_gref = ref [] in
-  let select gref env constr = 
+  let select gref env constr =
     if Search.module_filter (dirlist, false) gref env constr then 
     (debug (str "Select " ++ Printer.pr_global gref);
      selected_gref := gref :: !selected_gref)
@@ -160,15 +158,45 @@ let get_dirlist_grefs dirlist =
     Search.generic_search None select;
     !selected_gref
 
-let display_module_list_deps dirlist =
+let module_list_iter fmt dirlist display =
   let grefs = get_dirlist_grefs dirlist in
-  List.iter (fun gref -> display_deps gref) grefs
+  List.iter (fun gref -> display fmt gref) grefs
 
 VERNAC COMMAND EXTEND Depends CLASSIFIED AS QUERY
-| [ "Depends" reference_list(rl) ] ->
-  [ List.iter (fun ref -> display_deps (Nametab.global ref)) rl ]
-| [ "TypeDepends" reference_list(rl) ] ->
-  [ List.iter (fun ref -> display_type_deps (Nametab.global ref)) rl ]
-| [ "ModuleDepends" reference_list(rl) ] ->
-  [ display_module_list_deps (List.map locate_mp_dirpath rl) ]
+| [ "Depends" string(f) reference_list(rl) ] ->
+  [
+    let oc = open_out f in
+    let fmt = Pp_control.with_output_to oc in
+    Format.pp_set_max_boxes fmt max_int;
+    List.iter (fun ref -> display_deps fmt (Nametab.global ref)) rl;
+    feedback (str "wrote dependencies to file " ++ str f);
+    close_out oc
+  ]
+| [ "TypeDepends" string(f) reference_list(rl) ] ->
+  [
+    let oc = open_out f in
+    let fmt = Pp_control.with_output_to oc in
+    Format.pp_set_max_boxes fmt max_int;
+    List.iter (fun ref -> display_type_deps fmt (Nametab.global ref)) rl;
+    close_out oc;
+    feedback (str "wrote type dependencies to file " ++ str f)
+  ]
+| [ "ModuleDepends" string(f) reference_list(rl) ] ->
+  [
+    let oc = open_out f in
+    let fmt = Pp_control.with_output_to oc in
+    Format.pp_set_max_boxes fmt max_int;
+    module_list_iter fmt (List.map locate_mp_dirpath rl) display_deps;
+    feedback (str "wrote module dependencies to file " ++ str f);
+    close_out oc
+  ]
+| [ "ModuleTypeDepends" string(f) reference_list(rl) ] ->
+  [
+    let oc = open_out f in
+    let fmt = Pp_control.with_output_to oc in
+    Format.pp_set_max_boxes fmt max_int;
+    module_list_iter fmt (List.map locate_mp_dirpath rl) display_type_deps;
+    feedback (str "wrote module type dependencies to file " ++ str f);
+    close_out oc
+  ]
 END
