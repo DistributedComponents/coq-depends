@@ -89,6 +89,16 @@ let collect_type_deps gref =
   | Globnames.IndRef _ | Globnames.ConstructRef (_,_) ->
     Data.empty
 
+let is_opaque gref =
+  match gref with
+  | Globnames.VarRef _ -> assert false
+  | Globnames.ConstRef cst ->
+    let cb = Environ.lookup_constant cst (Global.env ()) in
+    (match cb.Declarations.const_body with
+    | Declarations.OpaqueDef _ -> true
+    | _ -> false)
+  | Globnames.IndRef _ | Globnames.ConstructRef (_,_) -> false
+
 let collect_deps gref =
   match gref with
   | Globnames.VarRef _ -> assert false
@@ -129,8 +139,10 @@ let is_prop gref =
 let display fmt gref d =
   let pp gr n s = Printer.pr_global gr ++ str " " ++ s in
   let ip = if is_prop gref then str "true" else str "false" in
+  let op = if is_opaque gref then str "true" else str "false" in
   let dt = (Data.fold pp) d (str "]\n") in
-  pp_with fmt (Printer.pr_global gref ++ str " " ++ ip ++ str " [ " ++ dt)
+  pp_with fmt (Printer.pr_global gref ++ str " " ++ ip ++ str " " ++ op ++ str " [ " ++ dt);
+  Format.pp_print_flush fmt ()
 
 let display_type_deps fmt gref =
   try let data = collect_type_deps gref in display fmt gref data
