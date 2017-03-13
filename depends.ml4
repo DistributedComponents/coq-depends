@@ -162,15 +162,39 @@ let module_list_iter fmt dirlist display =
   let grefs = get_dirlist_grefs dirlist in
   List.iter (fun gref -> display fmt gref) grefs
 
+let buf = Buffer.create 1000
+
 VERNAC COMMAND EXTEND Depends CLASSIFIED AS QUERY
+| [ "Depends" reference_list(rl) ] ->
+  [
+    Buffer.clear buf;
+    let fmt = Format.formatter_of_buffer buf in
+    Format.pp_set_max_boxes fmt max_int;
+    List.iter (fun ref -> display_deps fmt (Nametab.global ref)) rl;
+    if not (Int.equal (Buffer.length buf) 0) then begin
+      Pp.msg_notice (str (Buffer.contents buf));
+      Buffer.reset buf
+    end
+  ]
 | [ "Depends" string(f) reference_list(rl) ] ->
   [
     let oc = open_out f in
     let fmt = Pp_control.with_output_to oc in
     Format.pp_set_max_boxes fmt max_int;
     List.iter (fun ref -> display_deps fmt (Nametab.global ref)) rl;
-    feedback (str "wrote dependencies to file " ++ str f);
+    feedback (str "wrote dependencies to file: " ++ str f);
     close_out oc
+  ]
+| [ "TypeDepends" reference_list(rl) ] ->
+  [
+    Buffer.clear buf;
+    let fmt = Format.formatter_of_buffer buf in
+    Format.pp_set_max_boxes fmt max_int;
+    List.iter (fun ref -> display_type_deps fmt (Nametab.global ref)) rl;
+    if not (Int.equal (Buffer.length buf) 0) then begin
+      Pp.msg_notice (str (Buffer.contents buf));
+      Buffer.reset buf
+    end
   ]
 | [ "TypeDepends" string(f) reference_list(rl) ] ->
   [
@@ -179,7 +203,18 @@ VERNAC COMMAND EXTEND Depends CLASSIFIED AS QUERY
     Format.pp_set_max_boxes fmt max_int;
     List.iter (fun ref -> display_type_deps fmt (Nametab.global ref)) rl;
     close_out oc;
-    feedback (str "wrote type dependencies to file " ++ str f)
+    feedback (str "wrote type dependencies to file: " ++ str f)
+  ]
+| [ "ModuleDepends" reference_list(rl) ] ->
+  [
+    Buffer.clear buf;
+    let fmt = Format.formatter_of_buffer buf in
+    Format.pp_set_max_boxes fmt max_int;
+    module_list_iter fmt (List.map locate_mp_dirpath rl) display_deps;
+    if not (Int.equal (Buffer.length buf) 0) then begin
+      Pp.msg_notice (str (Buffer.contents buf));
+      Buffer.reset buf
+    end
   ]
 | [ "ModuleDepends" string(f) reference_list(rl) ] ->
   [
@@ -187,8 +222,19 @@ VERNAC COMMAND EXTEND Depends CLASSIFIED AS QUERY
     let fmt = Pp_control.with_output_to oc in
     Format.pp_set_max_boxes fmt max_int;
     module_list_iter fmt (List.map locate_mp_dirpath rl) display_deps;
-    feedback (str "wrote module dependencies to file " ++ str f);
+    feedback (str "wrote module dependencies to file: " ++ str f);
     close_out oc
+  ]
+| [ "ModuleTypeDepends" reference_list(rl) ] ->
+  [
+    Buffer.clear buf;
+    let fmt = Format.formatter_of_buffer buf in
+    Format.pp_set_max_boxes fmt max_int;
+    module_list_iter fmt (List.map locate_mp_dirpath rl) display_type_deps;
+    if not (Int.equal (Buffer.length buf) 0) then begin
+      Pp.msg_notice (str (Buffer.contents buf));
+      Buffer.reset buf
+    end
   ]
 | [ "ModuleTypeDepends" string(f) reference_list(rl) ] ->
   [
@@ -196,7 +242,7 @@ VERNAC COMMAND EXTEND Depends CLASSIFIED AS QUERY
     let fmt = Pp_control.with_output_to oc in
     Format.pp_set_max_boxes fmt max_int;
     module_list_iter fmt (List.map locate_mp_dirpath rl) display_type_deps;
-    feedback (str "wrote module type dependencies to file " ++ str f);
+    feedback (str "wrote module type dependencies to file: " ++ str f);
     close_out oc
   ]
 END
