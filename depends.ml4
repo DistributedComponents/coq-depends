@@ -81,11 +81,10 @@ let collect_type_deps gref =
   match gref with
   | Globnames.VarRef _ -> assert false
   | Globnames.ConstRef cst ->
-      let cb = Environ.lookup_constant cst (Global.env()) in
-      let cl = match cb.Declarations.const_type with
-        | Declarations.RegularArity t -> [t]
-        | Declarations.TemplateArity _ -> [] in
-      List.fold_right collect_long_names cl Data.empty
+      let cb = Environ.lookup_constant cst (Global.env ()) in
+      (match cb.Declarations.const_type with
+      | Declarations.RegularArity t -> collect_long_names t Data.empty
+      | Declarations.TemplateArity _ -> Data.empty)
   | Globnames.IndRef _ | Globnames.ConstructRef (_,_) ->
     Data.empty
 
