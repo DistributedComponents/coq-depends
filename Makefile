@@ -15,4 +15,4 @@ clean:
 install:
 	$(MAKE) -f Makefile.coq install
 
-.PHONY: all plugin clean install uninstall
+.PHONY: default plugin clean install uninstall

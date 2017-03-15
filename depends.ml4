@@ -21,13 +21,12 @@ let warning msg = Pp.msg_error (str "Warning: " ++ msg)
 let error msg = Pp.msg_error (str "Error: " ++ msg)
 
 module Data = struct
-  type t = int Globnames.Refmap.t
+  type t = unit Globnames.Refmap.t
 
   let empty = Globnames.Refmap.empty 
 
   let add gref d = 
-    let n = try  Globnames.Refmap.find gref d with Not_found -> 0 in
-    Globnames.Refmap.add gref (n+1) d
+    Globnames.Refmap.add gref () d
 
   (* [f gref n acc] *)
   let fold f d acc = Globnames.Refmap.fold f d acc
@@ -57,22 +56,22 @@ let collect_long_names (c:Term.constr) (acc:Data.t) =
       | Term.Meta _ -> assert false
       | Term.Evar _ -> assert false
       | Term.Sort s -> add_sort s acc
-      | Term.Cast(c,_,t) -> add c (add t acc)
-      | Term.Prod(n,t,c) -> add t (add c acc)
-      | Term.Lambda(n,t,c) -> add t (add c acc)
-      | Term.LetIn(_,v,t,c) -> add v (add t (add c acc))
-      | Term.App(c,ca) -> add c (Array.fold_right add ca acc)
+      | Term.Cast (c,_,t) -> add c (add t acc)
+      | Term.Prod (n,t,c) -> add t (add c acc)
+      | Term.Lambda (n,t,c) -> add t (add c acc)
+      | Term.LetIn (_,v,t,c) -> add v (add t (add c acc))
+      | Term.App (c,ca) -> add c (Array.fold_right add ca acc)
       | Term.Const cst -> add_constant (Univ.out_punivs cst) acc
       | Term.Ind i -> add_inductive (Univ.out_punivs i) acc
-      | Term.Construct cnst -> add_constructor (Univ.out_punivs cnst) acc
-      | Term.Case({Term.ci_ind=i},c,t,ca) ->
-          add_inductive i (add c (add t (Array.fold_right add ca acc)))
+      | Term.Construct cnst ->
+	let (i,_) = Univ.out_punivs cnst in add_inductive i acc
+      | Term.Case ({Term.ci_ind=i},c,t,ca) ->
+        add_inductive i (add c (add t (Array.fold_right add ca acc)))
       | Term.Fix(_,(_,ca,ca')) -> 
-          Array.fold_right add ca (Array.fold_right add ca' acc)
+        Array.fold_right add ca (Array.fold_right add ca' acc)
       | Term.CoFix(_,(_,ca,ca')) -> 
-          Array.fold_right add ca (Array.fold_right add ca' acc)
-      | Term.Proj(p, c) ->
-          add c acc
+        Array.fold_right add ca (Array.fold_right add ca' acc)
+      | Term.Proj(p, c) -> add c acc
   in add c acc
 
 exception NoDef of Globnames.global_reference
@@ -86,6 +85,8 @@ let collect_type_deps gref =
       | Declarations.RegularArity t -> collect_long_names t Data.empty
       | Declarations.TemplateArity _ -> Data.empty)
   | Globnames.IndRef _ | Globnames.ConstructRef (_,_) ->
+    (* TODO: what does the type of an inductive depend on? *)
+    (* TODO: type of constructor must be explored *)
     Data.empty
 
 let is_opaque gref =
@@ -96,7 +97,9 @@ let is_opaque gref =
     (match cb.Declarations.const_body with
     | Declarations.OpaqueDef _ -> true
     | _ -> false)
-  | Globnames.IndRef _ | Globnames.ConstructRef (_,_) -> false
+  | Globnames.IndRef _ | Globnames.ConstructRef (_,_) ->
+    (* TODO: default opacity of inductive? *)
+    false
 
 let collect_deps gref =
   match gref with
@@ -108,12 +111,23 @@ let collect_deps gref =
 	| None -> [] in
       let cl = match cb.Declarations.const_type with
         | Declarations.RegularArity t -> t :: cl
-        | Declarations.TemplateArity _ ->  cl in
+        | Declarations.TemplateArity _ -> cl in
       List.fold_right collect_long_names cl Data.empty
   | Globnames.IndRef i | Globnames.ConstructRef (i,_) -> 
       let _, indbody = Global.lookup_inductive i in
       let ca = indbody.Declarations.mind_user_lc in
         Array.fold_right collect_long_names ca Data.empty
+
+let kn_of_gref gref =
+  match gref with
+  | Globnames.VarRef _ -> assert false
+  | Globnames.ConstRef cst ->
+    Names.Constant.canonical cst
+  | Globnames.IndRef (k, i) ->
+    Names.canonical_mind k
+  | Globnames.ConstructRef ((k, i),_) ->
+    (* FIXME? *)
+    Names.canonical_mind k
 
 let is_prop gref =
   try
@@ -136,7 +150,7 @@ let is_prop gref =
     end
 
 let display fmt gref d =
-  let pp gr n s = Printer.pr_global gr ++ str " " ++ s in
+  let pp gr () s = str (Names.string_of_kn (kn_of_gref gr)) ++ str " " ++ s in
   let ip = if is_prop gref then str "true" else str "false" in
   let op = if is_opaque gref then str "true" else str "false" in
   let dt = (Data.fold pp) d (str "]\n") in
@@ -199,8 +213,8 @@ VERNAC COMMAND EXTEND Depends CLASSIFIED AS QUERY
     let oc = open_out f in
     let fmt = formatter (Some oc) in
     List.iter (fun ref -> display_deps fmt (Nametab.global ref)) rl;
-    feedback (str "wrote dependencies to file: " ++ str f);
-    close_out oc
+    close_out oc;
+    feedback (str "wrote dependencies to file: " ++ str f)
   ]
 | [ "TypeDepends" reference_list(rl) ] ->
   [
@@ -233,8 +247,8 @@ VERNAC COMMAND EXTEND Depends CLASSIFIED AS QUERY
     let oc = open_out f in
     let fmt = formatter (Some oc) in
     module_list_iter fmt (List.map locate_mp_dirpath rl) display_deps;
-    feedback (str "wrote module dependencies to file: " ++ str f);
-    close_out oc
+    close_out oc;
+    feedback (str "wrote module dependencies to file: " ++ str f)
   ]
 | [ "ModuleTypeDepends" reference_list(rl) ] ->
   [
@@ -250,7 +264,7 @@ VERNAC COMMAND EXTEND Depends CLASSIFIED AS QUERY
     let oc = open_out f in
     let fmt = formatter (Some oc) in
     module_list_iter fmt (List.map locate_mp_dirpath rl) display_type_deps;
-    feedback (str "wrote module type dependencies to file: " ++ str f);
-    close_out oc
+    close_out oc;
+    feedback (str "wrote module type dependencies to file: " ++ str f)
   ]
 END
