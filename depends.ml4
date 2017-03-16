@@ -118,16 +118,15 @@ let collect_deps gref =
       let ca = indbody.Declarations.mind_user_lc in
         Array.fold_right collect_long_names ca Data.empty
 
-let kn_of_gref gref =
+let string_of_gref gref =
   match gref with
   | Globnames.VarRef _ -> assert false
   | Globnames.ConstRef cst ->
-    Names.Constant.canonical cst
-  | Globnames.IndRef (k, i) ->
-    Names.canonical_mind k
-  | Globnames.ConstructRef ((k, i),_) ->
-    (* FIXME? *)
-    Names.canonical_mind k
+    Names.string_of_kn (Names.canonical_con cst)
+  | Globnames.IndRef (kn,i) ->
+    Names.string_of_kn (Names.canonical_mind kn)
+  | Globnames.ConstructRef ((k,i),j) -> (* FIXME *)
+    Names.string_of_kn (Names.canonical_mind k)
 
 let is_prop gref =
   try
@@ -150,11 +149,11 @@ let is_prop gref =
     end
 
 let display fmt gref d =
-  let pp gr () s = str (Names.string_of_kn (kn_of_gref gr)) ++ str " " ++ s in
+  let pp gr () s = str (string_of_gref gr) ++ str " " ++ s in
   let ip = if is_prop gref then str "true" else str "false" in
   let op = if is_opaque gref then str "true" else str "false" in
   let dt = (Data.fold pp) d (str "]\n") in
-  pp_with fmt (Printer.pr_global gref ++ str " " ++ ip ++ str " " ++ op ++ str " [ " ++ dt);
+  pp_with fmt (str (string_of_gref gref) ++ str " " ++ ip ++ str " " ++ op ++ str " [ " ++ dt);
   Format.pp_print_flush fmt ()
 
 let display_type_deps fmt gref =
