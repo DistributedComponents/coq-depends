@@ -45,9 +45,6 @@ let add_constant (cst:Names.constant)(d:Data.t) =
 let add_inductive ((k,i):Names.inductive)(d:Data.t) =
   Data.add (Globnames.IndRef (k, i)) d
 
-let add_constructor(((k,i),j):Names.constructor)(d:Data.t) =
-  Data.add (Globnames.ConstructRef ((k,i),j)) d
-
 let collect_long_names (c:Term.constr) (acc:Data.t) =
   let rec add c acc =
     match Term.kind_of_term c with
@@ -78,55 +75,55 @@ exception NoDef of Globnames.global_reference
 
 let collect_type_deps gref =
   match gref with
-  | Globnames.VarRef _ -> assert false
+  | Globnames.VarRef _ -> None
   | Globnames.ConstRef cst ->
       let cb = Environ.lookup_constant cst (Global.env ()) in
       (match cb.Declarations.const_type with
-      | Declarations.RegularArity t -> collect_long_names t Data.empty
-      | Declarations.TemplateArity _ -> Data.empty)
-  | Globnames.IndRef _ | Globnames.ConstructRef (_,_) ->
-    (* TODO: what does the type of an inductive depend on? *)
-    (* TODO: type of constructor must be explored *)
-    Data.empty
+      | Declarations.RegularArity t -> Some (collect_long_names t Data.empty)
+      | Declarations.TemplateArity _ -> Some Data.empty)
+  | Globnames.IndRef _ -> Some Data.empty
+  | Globnames.ConstructRef _ -> None
 
 let is_opaque gref =
   match gref with
-  | Globnames.VarRef _ -> assert false
+  | Globnames.VarRef _ -> false
   | Globnames.ConstRef cst ->
     let cb = Environ.lookup_constant cst (Global.env ()) in
     (match cb.Declarations.const_body with
     | Declarations.OpaqueDef _ -> true
     | _ -> false)
-  | Globnames.IndRef _ | Globnames.ConstructRef (_,_) ->
-    (* TODO: default opacity of inductive? *)
-    false
+  | Globnames.IndRef _ | Globnames.ConstructRef _ -> false
 
 let collect_deps gref =
   match gref with
-  | Globnames.VarRef _ -> assert false
+  | Globnames.VarRef _ -> None
   | Globnames.ConstRef cst ->
       let cb = Environ.lookup_constant cst (Global.env()) in
-      let cl = match Global.body_of_constant_body cb with
-         Some e -> [e]
-	| None -> [] in
-      let cl = match cb.Declarations.const_type with
+      let cl =
+	match Global.body_of_constant_body cb with
+        | Some e -> [e]
+	| None -> []
+      in
+      let cl =
+	match cb.Declarations.const_type with
         | Declarations.RegularArity t -> t :: cl
-        | Declarations.TemplateArity _ -> cl in
-      List.fold_right collect_long_names cl Data.empty
-  | Globnames.IndRef i | Globnames.ConstructRef (i,_) -> 
+        | Declarations.TemplateArity _ -> cl
+      in
+      Some (List.fold_right collect_long_names cl Data.empty)
+  | Globnames.IndRef i ->
       let _, indbody = Global.lookup_inductive i in
       let ca = indbody.Declarations.mind_user_lc in
-        Array.fold_right collect_long_names ca Data.empty
+      Some (Array.fold_right collect_long_names ca Data.empty)
+  | Globnames.ConstructRef _ -> None
 
 let string_of_gref gref =
   match gref with
-  | Globnames.VarRef _ -> assert false
+  | Globnames.VarRef _ -> ""
   | Globnames.ConstRef cst ->
     Names.string_of_kn (Names.canonical_con cst)
-  | Globnames.IndRef (kn,i) ->
+  | Globnames.IndRef (kn,_) ->
     Names.string_of_kn (Names.canonical_mind kn)
-  | Globnames.ConstructRef ((k,i),j) -> (* FIXME *)
-    Names.string_of_kn (Names.canonical_mind k)
+  | Globnames.ConstructRef _ -> ""
 
 let is_prop gref =
   try
@@ -157,12 +154,12 @@ let display fmt gref d =
   Format.pp_print_flush fmt ()
 
 let display_type_deps fmt gref =
-  try let data = collect_type_deps gref in display fmt gref data
+  try match collect_type_deps gref with None -> () | Some data -> display fmt gref data
   with NoDef gref ->
     warning (Printer.pr_global gref ++ str " has no value")
 
 let display_deps fmt gref =
-  try let data = collect_deps gref in display fmt gref data
+  try match collect_deps gref with None -> () | Some data -> display fmt gref data
   with NoDef gref ->
     warning (Printer.pr_global gref ++ str " has no value")
 
