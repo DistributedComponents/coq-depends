@@ -77,11 +77,25 @@ let collect_type_deps gref =
   match gref with
   | Globnames.VarRef _ -> None
   | Globnames.ConstRef cst ->
-      let cb = Environ.lookup_constant cst (Global.env ()) in
-      (match cb.Declarations.const_type with
-      | Declarations.RegularArity t -> Some (collect_long_names t Data.empty)
-      | Declarations.TemplateArity _ -> Some Data.empty)
+    let cb = Environ.lookup_constant cst (Global.env ()) in
+    (match cb.Declarations.const_type with
+    | Declarations.RegularArity t -> Some (collect_long_names t Data.empty)
+    | Declarations.TemplateArity _ -> Some Data.empty)
   | Globnames.IndRef _ -> Some Data.empty
+  | Globnames.ConstructRef _ -> None
+
+let collect_body_deps gref =
+  match gref with
+  | Globnames.VarRef _ -> None
+  | Globnames.ConstRef cst ->
+    let cb = Environ.lookup_constant cst (Global.env()) in
+    (match Global.body_of_constant_body cb with
+    | Some t -> Some (collect_long_names t Data.empty)
+    | None -> None)
+  | Globnames.IndRef i ->
+      let _, indbody = Global.lookup_inductive i in
+      let ca = indbody.Declarations.mind_user_lc in
+      Some (Array.fold_right collect_long_names ca Data.empty)
   | Globnames.ConstructRef _ -> None
 
 let is_opaque gref =
@@ -93,28 +107,6 @@ let is_opaque gref =
     | Declarations.OpaqueDef _ -> true
     | _ -> false)
   | Globnames.IndRef _ | Globnames.ConstructRef _ -> false
-
-let collect_deps gref =
-  match gref with
-  | Globnames.VarRef _ -> None
-  | Globnames.ConstRef cst ->
-      let cb = Environ.lookup_constant cst (Global.env()) in
-      let cl =
-	match Global.body_of_constant_body cb with
-        | Some e -> [e]
-	| None -> []
-      in
-      let cl =
-	match cb.Declarations.const_type with
-        | Declarations.RegularArity t -> t :: cl
-        | Declarations.TemplateArity _ -> cl
-      in
-      Some (List.fold_right collect_long_names cl Data.empty)
-  | Globnames.IndRef i ->
-      let _, indbody = Global.lookup_inductive i in
-      let ca = indbody.Declarations.mind_user_lc in
-      Some (Array.fold_right collect_long_names ca Data.empty)
-  | Globnames.ConstructRef _ -> None
 
 let string_of_gref gref =
   match gref with
@@ -158,8 +150,8 @@ let display_type_deps fmt gref =
   with NoDef gref ->
     warning (Printer.pr_global gref ++ str " has no value")
 
-let display_deps fmt gref =
-  try match collect_deps gref with None -> () | Some data -> display fmt gref data
+let display_body_deps fmt gref =
+  try match collect_body_deps gref with None -> () | Some data -> display fmt gref data
   with NoDef gref ->
     warning (Printer.pr_global gref ++ str " has no value")
 
@@ -167,7 +159,7 @@ let locate_mp_dirpath ref =
   let (loc,qid) = Libnames.qualid_of_reference ref in
   try Nametab.dirpath_of_module (Nametab.locate_module qid)
   with Not_found -> 
-    Errors.user_err_loc (loc, "", str "Unknown module" ++ spc () ++ Libnames.pr_qualid qid)
+    Errors.user_err_loc (loc, "", str "Unknown module " ++ Libnames.pr_qualid qid)
 
 let get_dirlist_grefs dirlist =
   let selected_gref = ref [] in
@@ -198,7 +190,7 @@ VERNAC COMMAND EXTEND Depends CLASSIFIED AS QUERY
 | [ "Depends" reference_list(rl) ] ->
   [
     let fmt = formatter None in
-    List.iter (fun ref -> display_deps fmt (Nametab.global ref)) rl;
+    List.iter (fun ref -> display_body_deps fmt (Nametab.global ref)) rl;
     if not (Int.equal (Buffer.length buf) 0) then begin
       Pp.msg_notice (str (Buffer.contents buf));
       Buffer.reset buf
@@ -208,7 +200,7 @@ VERNAC COMMAND EXTEND Depends CLASSIFIED AS QUERY
   [
     let oc = open_out f in
     let fmt = formatter (Some oc) in
-    List.iter (fun ref -> display_deps fmt (Nametab.global ref)) rl;
+    List.iter (fun ref -> display_body_deps fmt (Nametab.global ref)) rl;
     close_out oc;
     feedback (str "wrote dependencies to file: " ++ str f)
   ]
@@ -232,7 +224,7 @@ VERNAC COMMAND EXTEND Depends CLASSIFIED AS QUERY
 | [ "ModuleDepends" reference_list(rl) ] ->
   [
     let fmt = formatter None  in
-    module_list_iter fmt (List.map locate_mp_dirpath rl) display_deps;
+    module_list_iter fmt (List.map locate_mp_dirpath rl) display_body_deps;
     if not (Int.equal (Buffer.length buf) 0) then begin
       Pp.msg_notice (str (Buffer.contents buf));
       Buffer.reset buf
@@ -242,7 +234,7 @@ VERNAC COMMAND EXTEND Depends CLASSIFIED AS QUERY
   [
     let oc = open_out f in
     let fmt = formatter (Some oc) in
-    module_list_iter fmt (List.map locate_mp_dirpath rl) display_deps;
+    module_list_iter fmt (List.map locate_mp_dirpath rl) display_body_deps;
     close_out oc;
     feedback (str "wrote module dependencies to file: " ++ str f)
   ]
