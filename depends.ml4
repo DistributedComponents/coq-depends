@@ -34,8 +34,7 @@ end
 
 let add_identifier (x:Names.identifier)(d:Data.t) = 
   failwith 
-    ("Depends does not expect to find plain identifiers :" ^
-     Names.string_of_id x)
+    (Printf.sprintf "Depends does not expect to find plain identifiers: %s" (Names.string_of_id x))
 
 let add_sort (s:Term.sorts)(d:Data.t) = d
 
@@ -75,28 +74,28 @@ exception NoDef of Globnames.global_reference
 
 let collect_type_deps gref =
   match gref with
-  | Globnames.VarRef _ -> None
+  | Globnames.VarRef _ -> Data.empty
   | Globnames.ConstRef cst ->
     let cb = Environ.lookup_constant cst (Global.env ()) in
     (match cb.Declarations.const_type with
-    | Declarations.RegularArity t -> Some (collect_long_names t Data.empty)
-    | Declarations.TemplateArity _ -> Some Data.empty)
-  | Globnames.IndRef _ -> Some Data.empty
-  | Globnames.ConstructRef _ -> None
+    | Declarations.RegularArity t -> collect_long_names t Data.empty
+    | Declarations.TemplateArity _ -> Data.empty)
+  | Globnames.IndRef _ -> Data.empty
+  | Globnames.ConstructRef _ -> Data.empty
 
 let collect_body_deps gref =
   match gref with
-  | Globnames.VarRef _ -> None
+  | Globnames.VarRef _ -> Data.empty
   | Globnames.ConstRef cst ->
     let cb = Environ.lookup_constant cst (Global.env()) in
     (match Global.body_of_constant_body cb with
-    | Some t -> Some (collect_long_names t Data.empty)
-    | None -> None)
+    | Some t -> collect_long_names t Data.empty
+    | None -> Data.empty)
   | Globnames.IndRef i ->
       let _, indbody = Global.lookup_inductive i in
       let ca = indbody.Declarations.mind_user_lc in
-      Some (Array.fold_right collect_long_names ca Data.empty)
-  | Globnames.ConstructRef _ -> None
+      Array.fold_right collect_long_names ca Data.empty
+  | Globnames.ConstructRef _ -> Data.empty
 
 let is_opaque gref =
   match gref with
@@ -137,6 +136,34 @@ let is_prop gref =
       false
     end
 
+let acc_gref gref () acc = 
+  Printf.sprintf "\"%s\"" (string_of_gref gref) :: acc
+
+let print_type_deps fmt gref delim =
+  match gref with
+  | Globnames.VarRef _  | Globnames.ConstructRef _ -> ()
+  | Globnames.ConstRef _ | Globnames.IndRef _ ->
+    let sdt = (Data.fold acc_gref) (collect_type_deps gref) [] in
+    let s = Printf.sprintf
+      "%s { \"name\": \"%s\", \"isProp\": %B, \"isOpaque\": %B, \"typeDepends\": [ %s ] }"
+      !delim (string_of_gref gref) (is_prop gref) (is_opaque gref) (String.concat ", " sdt)
+    in
+    pp_with fmt (str s);
+    delim := ",\n"
+
+let print_all_deps fmt gref delim =
+  match gref with
+  | Globnames.VarRef _  | Globnames.ConstructRef _ -> ()
+  | Globnames.ConstRef _ | Globnames.IndRef _ ->
+    let sdt = (Data.fold acc_gref) (collect_type_deps gref) [] in
+    let sdb = (Data.fold acc_gref) (collect_body_deps gref) [] in
+    let s = Printf.sprintf
+      "%s { \"name\": \"%s\", \"isProp\": %B, \"isOpaque\": %B, \"typeDepends\": [ %s ], \"bodyDepends\": [ %s ] }"
+      !delim (string_of_gref gref) (is_prop gref) (is_opaque gref) (String.concat ", " sdt) (String.concat ", " sdb)
+    in
+    pp_with fmt (str s);
+    delim := ",\n"
+
 let display fmt gref d =
   let pp gr () s = str (string_of_gref gr) ++ str " " ++ s in
   let ip = if is_prop gref then str "true" else str "false" in
@@ -146,12 +173,12 @@ let display fmt gref d =
   Format.pp_print_flush fmt ()
 
 let display_type_deps fmt gref =
-  try match collect_type_deps gref with None -> () | Some data -> display fmt gref data
+  try let data = collect_type_deps gref in display fmt gref data
   with NoDef gref ->
     warning (Printer.pr_global gref ++ str " has no value")
 
 let display_body_deps fmt gref =
-  try match collect_body_deps gref with None -> () | Some data -> display fmt gref data
+  try let data = collect_body_deps gref in display fmt gref data
   with NoDef gref ->
     warning (Printer.pr_global gref ++ str " has no value")
 
@@ -171,10 +198,6 @@ let get_dirlist_grefs dirlist =
     Search.generic_search None select;
     !selected_gref
 
-let module_list_iter fmt dirlist display =
-  let grefs = get_dirlist_grefs dirlist in
-  List.iter (fun gref -> display fmt gref) grefs
-
 let buf = Buffer.create 1000
 
 let formatter out =
@@ -190,7 +213,11 @@ VERNAC COMMAND EXTEND Depends CLASSIFIED AS QUERY
 | [ "Depends" reference_list(rl) ] ->
   [
     let fmt = formatter None in
-    List.iter (fun ref -> display_body_deps fmt (Nametab.global ref)) rl;
+    let delim = ref "" in
+    pp_with fmt (str "[\n");
+    List.iter (fun r -> print_all_deps fmt (Nametab.global r) delim) rl;
+    pp_with fmt (str "\n]\n");
+    Format.pp_print_flush fmt ();
     if not (Int.equal (Buffer.length buf) 0) then begin
       Pp.msg_notice (str (Buffer.contents buf));
       Buffer.reset buf
@@ -200,14 +227,22 @@ VERNAC COMMAND EXTEND Depends CLASSIFIED AS QUERY
   [
     let oc = open_out f in
     let fmt = formatter (Some oc) in
-    List.iter (fun ref -> display_body_deps fmt (Nametab.global ref)) rl;
+    let delim = ref "" in
+    pp_with fmt (str "[\n");
+    List.iter (fun ref -> print_all_deps fmt (Nametab.global ref) delim) rl;
+    pp_with fmt (str "\n]\n");
+    Format.pp_print_flush fmt ();
     close_out oc;
     feedback (str "wrote dependencies to file: " ++ str f)
   ]
 | [ "TypeDepends" reference_list(rl) ] ->
   [
     let fmt = formatter None in
-    List.iter (fun ref -> display_type_deps fmt (Nametab.global ref)) rl;
+    let delim = ref "" in
+    pp_with fmt (str "[\n");
+    List.iter (fun r -> print_type_deps fmt (Nametab.global r) delim) rl;
+    pp_with fmt (str "\n]\n");
+    Format.pp_print_flush fmt ();
     if not (Int.equal (Buffer.length buf) 0) then begin
       Pp.msg_notice (str (Buffer.contents buf));
       Buffer.reset buf
@@ -217,14 +252,24 @@ VERNAC COMMAND EXTEND Depends CLASSIFIED AS QUERY
   [
     let oc = open_out f in
     let fmt = formatter (Some oc) in
-    List.iter (fun ref -> display_type_deps fmt (Nametab.global ref)) rl;
+    let delim = ref "" in
+    pp_with fmt (str "[\n");
+    List.iter (fun ref -> print_type_deps fmt (Nametab.global ref) delim) rl;
+    pp_with fmt (str "\n]\n");
+    Format.pp_print_flush fmt ();
     close_out oc;
     feedback (str "wrote type dependencies to file: " ++ str f)
   ]
 | [ "ModuleDepends" reference_list(rl) ] ->
   [
-    let fmt = formatter None  in
-    module_list_iter fmt (List.map locate_mp_dirpath rl) display_body_deps;
+    let fmt = formatter None in
+    let delim = ref "" in
+    let dirlist = List.map locate_mp_dirpath rl in
+    let grefs = get_dirlist_grefs dirlist in
+    pp_with fmt (str "[\n");
+    List.iter (fun gref -> print_all_deps fmt gref delim) grefs;
+    pp_with fmt (str "\n]\n");
+    Format.pp_print_flush fmt ();
     if not (Int.equal (Buffer.length buf) 0) then begin
       Pp.msg_notice (str (Buffer.contents buf));
       Buffer.reset buf
@@ -234,14 +279,26 @@ VERNAC COMMAND EXTEND Depends CLASSIFIED AS QUERY
   [
     let oc = open_out f in
     let fmt = formatter (Some oc) in
-    module_list_iter fmt (List.map locate_mp_dirpath rl) display_body_deps;
+    let delim = ref "" in
+    let dirlist = List.map locate_mp_dirpath rl in
+    let grefs = get_dirlist_grefs dirlist in
+    pp_with fmt (str "[\n");
+    List.iter (fun gref -> print_all_deps fmt gref delim) grefs;
+    pp_with fmt (str "\n]\n");
+    Format.pp_print_flush fmt ();
     close_out oc;
     feedback (str "wrote module dependencies to file: " ++ str f)
   ]
 | [ "ModuleTypeDepends" reference_list(rl) ] ->
   [
     let fmt = formatter None in
-    module_list_iter fmt (List.map locate_mp_dirpath rl) display_type_deps;
+    let delim = ref "" in
+    let dirlist = List.map locate_mp_dirpath rl in
+    let grefs = get_dirlist_grefs dirlist in
+    pp_with fmt (str "[\n");
+    List.iter (fun gref -> print_type_deps fmt gref delim) grefs;
+    pp_with fmt (str "\n]\n");
+    Format.pp_print_flush fmt ();
     if not (Int.equal (Buffer.length buf) 0) then begin
       Pp.msg_notice (str (Buffer.contents buf));
       Buffer.reset buf
@@ -251,7 +308,13 @@ VERNAC COMMAND EXTEND Depends CLASSIFIED AS QUERY
   [
     let oc = open_out f in
     let fmt = formatter (Some oc) in
-    module_list_iter fmt (List.map locate_mp_dirpath rl) display_type_deps;
+    let delim = ref "" in
+    let dirlist = List.map locate_mp_dirpath rl in
+    let grefs = get_dirlist_grefs dirlist in
+    pp_with fmt (str "[\n");
+    List.iter (fun gref -> print_type_deps fmt gref delim) grefs;
+    pp_with fmt (str "\n]\n");
+    Format.pp_print_flush fmt ();
     close_out oc;
     feedback (str "wrote module type dependencies to file: " ++ str f)
   ]
