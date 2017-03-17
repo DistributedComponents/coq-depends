@@ -164,24 +164,6 @@ let print_all_deps fmt gref delim =
     pp_with fmt (str s);
     delim := ",\n"
 
-let display fmt gref d =
-  let pp gr () s = str (string_of_gref gr) ++ str " " ++ s in
-  let ip = if is_prop gref then str "true" else str "false" in
-  let op = if is_opaque gref then str "true" else str "false" in
-  let dt = (Data.fold pp) d (str "]\n") in
-  pp_with fmt (str (string_of_gref gref) ++ str " " ++ ip ++ str " " ++ op ++ str " [ " ++ dt);
-  Format.pp_print_flush fmt ()
-
-let display_type_deps fmt gref =
-  try let data = collect_type_deps gref in display fmt gref data
-  with NoDef gref ->
-    warning (Printer.pr_global gref ++ str " has no value")
-
-let display_body_deps fmt gref =
-  try let data = collect_body_deps gref in display fmt gref data
-  with NoDef gref ->
-    warning (Printer.pr_global gref ++ str " has no value")
-
 let locate_mp_dirpath ref =
   let (loc,qid) = Libnames.qualid_of_reference ref in
   try Nametab.dirpath_of_module (Nametab.locate_module qid)
