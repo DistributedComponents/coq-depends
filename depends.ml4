@@ -145,8 +145,41 @@ let print_type_deps fmt gref delim =
   | Globnames.ConstRef _ | Globnames.IndRef _ ->
     let sdt = (Data.fold acc_gref) (collect_type_deps gref) [] in
     let s = Printf.sprintf
-      "%s { \"name\": \"%s\", \"isProp\": %B, \"isOpaque\": %B, \"typeDepends\": [ %s ] }"
+      "%s { \"name\": \"%s\", \"isProp\": %B, \"isOpaque\": %B, \"typeDepends\": [%s] }"
       !delim (string_of_gref gref) (is_prop gref) (is_opaque gref) (String.concat ", " sdt)
+    in
+    pp_with fmt (str s);
+    delim := ",\n"
+
+let print_vio_deps fmt gref delim =
+  match gref with
+  | Globnames.VarRef _  | Globnames.ConstructRef _ -> ()
+  | Globnames.ConstRef _ ->
+    let c_pr = is_prop gref in
+    let c_op = is_opaque gref in
+    let sdt = (Data.fold acc_gref) (collect_type_deps gref) [] in
+    if c_pr && c_op then
+      let s = Printf.sprintf
+	"%s { \"name\": \"%s\", \"isProp\": %B, \"isOpaque\": %B, \"typeDepends\": [%s] }"
+	!delim (string_of_gref gref) c_pr c_op (String.concat ", " sdt)
+      in
+      pp_with fmt (str s);
+      delim := ",\n"
+    else begin
+      let sdb = (Data.fold acc_gref) (collect_body_deps gref) [] in
+      let s = Printf.sprintf
+	"%s { \"name\": \"%s\", \"isProp\": %B, \"isOpaque\": %B, \"typeDepends\": [%s], \"bodyDepends\": [%s] }"
+	!delim (string_of_gref gref) (is_prop gref) (is_opaque gref) (String.concat ", " sdt) (String.concat ", " sdb)
+      in
+      pp_with fmt (str s);
+      delim := ",\n"
+    end
+  | Globnames.IndRef _ ->
+    let sdt = (Data.fold acc_gref) (collect_type_deps gref) [] in
+    let sdb = (Data.fold acc_gref) (collect_body_deps gref) [] in
+    let s = Printf.sprintf
+      "%s { \"name\": \"%s\", \"isProp\": %B, \"isOpaque\": %B, \"typeDepends\": [%s], \"bodyDepends\": [%s] }"
+      !delim (string_of_gref gref) (is_prop gref) (is_opaque gref) (String.concat ", " sdt) (String.concat ", " sdb)
     in
     pp_with fmt (str s);
     delim := ",\n"
@@ -158,7 +191,7 @@ let print_all_deps fmt gref delim =
     let sdt = (Data.fold acc_gref) (collect_type_deps gref) [] in
     let sdb = (Data.fold acc_gref) (collect_body_deps gref) [] in
     let s = Printf.sprintf
-      "%s { \"name\": \"%s\", \"isProp\": %B, \"isOpaque\": %B, \"typeDepends\": [ %s ], \"bodyDepends\": [ %s ] }"
+      "%s { \"name\": \"%s\", \"isProp\": %B, \"isOpaque\": %B, \"typeDepends\": [%s], \"bodyDepends\": [%s] }"
       !delim (string_of_gref gref) (is_prop gref) (is_opaque gref) (String.concat ", " sdt) (String.concat ", " sdb)
     in
     pp_with fmt (str s);
@@ -257,6 +290,21 @@ VERNAC COMMAND EXTEND Depends CLASSIFIED AS QUERY
       Buffer.reset buf
     end
   ]
+| [ "ModuleDepends" "VIO" reference_list(rl) ] ->
+  [
+    let fmt = formatter None in
+    let delim = ref "" in
+    let dirlist = List.map locate_mp_dirpath rl in
+    let grefs = get_dirlist_grefs dirlist in
+    pp_with fmt (str "[\n");
+    List.iter (fun gref -> print_vio_deps fmt gref delim) grefs;
+    pp_with fmt (str "\n]\n");
+    Format.pp_print_flush fmt ();
+    if not (Int.equal (Buffer.length buf) 0) then begin
+      Pp.msg_notice (str (Buffer.contents buf));
+      Buffer.reset buf
+    end
+  ]
 | [ "ModuleDepends" string(f) reference_list(rl) ] ->
   [
     let oc = open_out f in
@@ -266,6 +314,20 @@ VERNAC COMMAND EXTEND Depends CLASSIFIED AS QUERY
     let grefs = get_dirlist_grefs dirlist in
     pp_with fmt (str "[\n");
     List.iter (fun gref -> print_all_deps fmt gref delim) grefs;
+    pp_with fmt (str "\n]\n");
+    Format.pp_print_flush fmt ();
+    close_out oc;
+    feedback (str "wrote module dependencies to file: " ++ str f)
+  ]
+| [ "ModuleDepends" "VIO" string(f) reference_list(rl) ] ->
+  [
+    let oc = open_out f in
+    let fmt = formatter (Some oc) in
+    let delim = ref "" in
+    let dirlist = List.map locate_mp_dirpath rl in
+    let grefs = get_dirlist_grefs dirlist in
+    pp_with fmt (str "[\n");
+    List.iter (fun gref -> print_vio_deps fmt gref delim) grefs;
     pp_with fmt (str "\n]\n");
     Format.pp_print_flush fmt ();
     close_out oc;
