@@ -155,13 +155,12 @@ let print_vio_deps fmt gref delim =
   match gref with
   | Globnames.VarRef _  | Globnames.ConstructRef _ -> ()
   | Globnames.ConstRef _ ->
-    let c_pr = is_prop gref in
     let c_op = is_opaque gref in
     let sdt = (Data.fold acc_gref) (collect_type_deps gref) [] in
-    if c_pr && c_op then
+    if c_op then
       let s = Printf.sprintf
 	"%s { \"name\": \"%s\", \"isProp\": %B, \"isOpaque\": %B, \"typeDepends\": [%s] }"
-	!delim (string_of_gref gref) c_pr c_op (String.concat ", " sdt)
+	!delim (string_of_gref gref) (is_prop gref) c_op (String.concat ", " sdt)
       in
       pp_with fmt (str s);
       delim := ",\n"
