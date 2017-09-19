@@ -1,5 +1,5 @@
-coq-depends
-===========
+Depends Coq Plugin
+==================
 
 A Coq plugin for non-recursive extraction of dependencies of terms, derived from [coq-dpdgraph](https://github.com/Karmaki/coq-dpdgraph).
 
@@ -7,49 +7,41 @@ Requirements
 ------------
 
 - [`Coq 8.5`](https://coq.inria.fr/coq-85)
+- ['camlp5'](https://camlp5.github.io)
 
 Installation
 ------------
 
-The easiest way to install coq-depends is via OPAM:
+The easiest way to install the plugin is via [OPAM](http://opam.ocaml.org/doc/Install.html):
 
 ```
-opam repo add distributedcomponents-dev http://opam-dev.distributedcomponents.net
+opam repo add proofengineering-dev http://opam-dev.proofengineering.org
 opam install coq-depends
 ```
 
-Usage
------
+To build the plugin manually, run `make` in the root directory. Then, to install it, run `make install`.
+
+Usage Examples
+--------------
 
 ```coq
-(* modules to analyze; do not import! *)
-Require StructTact.Fin.
-Require StructTact.RemoveAll.
-
-(* load plugin *)
 Require Import Depends.Depends.
 
-(* show dependencies for constants *)
-Depends Fin.fin_eq_dec Fin.all_fin.
+(* print dependencies as JSON for constants *)
+Depends List.map List.filter.
 
-(* write dependencies to file for constants *)
-Depends "fin-deps.dep" Fin.fin_eq_dec Fin.all_fin.
+(* write dependencies to file as JSON for constants *)
+Depends "deps.json" List.map List.filter.
 
-(* show dependencies for the types of constants *)
-TypeDepends Fin.fin_eq_dec Fin.all_fin_all.
+(* show dependencies as JSON for the types of constants *)
+TypeDepends List.map List.filter.
 
-(* write dependencies to file for the type of constants *)
-TypeDepends "fin-type-deps.txt" Fin.fin_eq_dec Fin.all_fin_all.
+(* write dependencies to file as JSON for the type of constants *)
+TypeDepends "typedeps.json" List.map List.filter.
 
-(* show dependencies of all constants in given modules *)
-ModuleDepends Fin RemoveAll.
+(* show dependencies as JSON of all constants in given modules *)
+ModuleDepends Logic List.
 
-(* write dependencies to file for all constants in given modules *)
-ModuleDepends "fin-removeall-deps.txt" Fin RemoveAll.
-
-(* show type dependencies of all constants in given modules *)
-ModuleTypeDepends Fin RemoveAll.
-
-(* write dependencies to file for all types of constants in given modules *)
-ModuleTypeDepends "fin-removeall-type-deps.txt" Fin RemoveAll.
+(* write dependencies as JSON to file for all constants in given modules *)
+ModuleDepends "deps.json" Logic List.
 ```
