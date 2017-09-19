@@ -1,6 +1,8 @@
 Depends Coq Plugin
 ==================
 
+[![Build Status](https://api.travis-ci.org/proofengineering/coq-depends.svg?branch=master)](https://travis-ci.org/proofengineering/coq-depends)
+
 A Coq plugin for non-recursive extraction of dependencies of terms, derived from [coq-dpdgraph](https://github.com/Karmaki/coq-dpdgraph).
 
 Requirements
